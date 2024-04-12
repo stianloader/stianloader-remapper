@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeSet;
@@ -93,7 +94,7 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
     @NotNull
     @Contract(pure = true, value = "null -> fail; !null -> new")
     @Unmodifiable
-    private static <T> Map<T, @NotNull Set<T>> collect(@Unmodifiable @NotNull Map<T, ? extends @Nullable Set<T>> input) {
+    private static <T> Map<T, @NotNull Set<T>> assembleInvertedTree(@Unmodifiable @NotNull Map<T, ? extends @Nullable Set<T>> input) {
         Map<T, @NotNull Set<T>> mapOut = new HashMap<>();
         Queue<T> queue = new ArrayDeque<>();
         for (T key : input.keySet()) {
@@ -104,8 +105,9 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
                 if (!collected.add(queued)) {
                     continue;
                 }
-                if (mapOut.containsKey(queued)) {
-                    collected.addAll(mapOut.get(queued));
+                Set<T> elements = mapOut.get(queued);
+                if (!Objects.isNull(elements)) {
+                    collected.addAll(elements);
                     continue;
                 }
                 Set<T> set = input.get(queued);
@@ -154,7 +156,7 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
             }
         }
 
-        Map<@NotNull String, @NotNull Set<@NotNull String>> allChildren = SimpleTopLevelLookup.collect(immediateChildren);
+        Map<@NotNull String, @NotNull Set<@NotNull String>> allChildren = SimpleTopLevelLookup.assembleInvertedTree(immediateChildren);
 
         // Ensure that we go by parent classes first, then go to the respective children
         TreeSet<@NotNull String> applyOrder = new TreeSet<>((e1, e0) -> {
