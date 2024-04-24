@@ -2,6 +2,7 @@ package org.stianloader.remapper;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
@@ -88,6 +89,216 @@ import org.objectweb.asm.tree.TypeInsnNode;
  */
 public final class Remapper {
 
+    /**
+     * Remaps a field descriptor.
+     *
+     * @param lookup The {@link MappingLookup} to use in order to remap the descriptor.
+     * @param fieldDesc The old (unmapped) field descriptor
+     * @param sharedBuilder A shared cached string builder. The contents of the string builder are wiped and after the invocation the contents are undefined
+     * @return The new (remapped) field descriptor. It <b>can</b> be identity identical to the "fieldDesc" if it didn't need to be altered
+     */
+    @SuppressWarnings("null")
+    @NotNull
+    public static String getRemappedFieldDescriptor(@NotNull MappingLookup lookup, @NotNull String fieldDesc, @NotNull StringBuilder sharedBuilder) {
+        sharedBuilder.setLength(0);
+        return Remapper.remapSingleDesc(lookup, fieldDesc, sharedBuilder);
+    }
+
+    /**
+     * Remaps a method descriptor.
+     *
+     * <p>Note: This method completely disregards bridges or other context-specific circumstances.
+     * Overall, it aims to be the most generically applicable method.
+     *
+     * <p>Although this method was initially written to remap {@link MethodNode#desc method descriptors},
+     * this method also can work with {@link MethodNode#signature method signatures}.
+     *
+     * @param lookup The {@link MappingLookup} to use in order to remap the descriptor.
+     * @param methodDesc The old (unmapped) method descriptor
+     * @param sharedBuilder A shared cached string builder. The contents of the string builder are wiped and after the invocation the contents are undefined
+     * @return The new (remapped) method descriptor. It <b>can</b> be identity identical to the "methodDesc" if it didn't need to be altered
+     */
+    @NotNull
+    public static String getRemappedMethodDescriptor(@NotNull MappingLookup lookup, @NotNull String methodDesc, @NotNull StringBuilder sharedBuilder) {
+        sharedBuilder.setLength(0);
+        if (!Remapper.remapSignature(lookup, methodDesc, sharedBuilder)) {
+            return methodDesc;
+        }
+        return sharedBuilder.toString();
+    }
+
+    /**
+     * Remap an internal name or array {@link String}, meaning that this method accepts the same kind
+     * of strings as {@link Type#getObjectType(String)}.
+     *
+     * <p>The contents of the {@link StringBuilder} instance passed to this method might be overwritten and
+     * the contents afterwards should be considered unknown. It is especially not guaranteed (in fact, it usually won't be)
+     * that the content of the {@link StringBuilder} is equal to the returned {@link String}.
+     *
+     * @param lookup The {@link MappingLookup} to use in order to remap the descriptor.
+     * @param internalName The internal name in the source namespace.
+     * @param sharedStringBuilder A shared {@link StringBuilder} instance of object pooling purposes (note: The instance should not be used across multiple threads!)
+     * @return The remapped internal name in the destination namespace.
+     * @see Type#getInternalName()
+     */
+    @NotNull
+    public static String remapInternalName(@NotNull MappingLookup lookup, @NotNull String internalName, @NotNull StringBuilder sharedStringBuilder) {
+        if (internalName.codePointAt(0) == '[') {
+            return Remapper.remapSingleDesc(lookup, internalName, sharedStringBuilder);
+        } else {
+            return lookup.getRemappedClassName(internalName);
+        }
+    }
+
+    /**
+     * Remap a generic signature string, as used for example in {@link MethodNode#signature}, {@link FieldNode#signature}
+     * or {@link ClassNode#signature}. As this method is fairly generic it is even capable of remapping method, field or
+     * type descriptors. However, this method is not capable of remapping internal names. If internal names should
+     * be remapped, use {@link #remapInternalName(MappingLookup, String, StringBuilder)} instead.
+     *
+     * <p>Internally, this method is recursive (in order to be able to correctly remap nested generics), which is
+     * why this method accepts a start and end pointer, which are the {@link String#codePointAt(int) codepoints}
+     * which should be remapped and pushed to the {@link StringBuilder} buffer. This algorithm evaluates the
+     * input signature from left to right.
+     *
+     * <p>In the case that end is greater than <code>start</code>, a crash is likely, although the type of crash is not defined.
+     * It may also deadlock or cause an {@link OutOfMemoryError OOM situation}. Furthermore, if <code>end</code> does not correctly
+     * align with a type boundary (usually a semicolon or a character that represents a primitive), then unexpected
+     * behaviour is likely - more likely than not it will cause a crash, deadlock or {@link OutOfMemoryError}.
+     * As similar behaviour also applies to <code>start</code>, both <code>start</code> and <code>end</code> should be chosen carefully.
+     * More often than not, this method can be considered overkill and instead {@link Remapper#remapSignature(MappingLookup, String, StringBuilder)}
+     * can be used safely as an alternative - however that method will remap the entire signature while
+     * this method can (if <code>start</code> and <code>end</code> are chosen accordingly) remap parts of it.
+     *
+     * @param lookup The {@link MappingLookup} to use in order to remap the descriptor.
+     * @param signature The signature to remap in the source namespace.
+     * @param start The start of signature.
+     * @param end The last codepoint of the signature that should be handled by this method. Everything beyond it is plainly ignored.
+     * @param signatureOut The {@link StringBuilder} instance to which the remapped signature should be stored into.
+     * @return True if a modification happened while remapping the signature, false otherwise.
+     */
+    public static boolean remapSignature(@NotNull MappingLookup lookup, @NotNull String signature, int start, int end, @NotNull StringBuilder signatureOut) {
+        if (start == end) {
+            return false;
+        }
+        int type = signature.codePointAt(start++);
+        switch (type) {
+        case 'T':
+            // generics type parameter
+            // fall-through intended as they are similar enough in format compared to objects
+        case 'L':
+            // object
+            // find the end of the internal name of the object
+            int endObject = start;
+            while(true) {
+                // this will skip a character, but this is not interesting as class names have to be at least 1 character long
+                int codepoint = signature.codePointAt(++endObject);
+                if (codepoint == ';') {
+                    String name = signature.substring(start, endObject);
+                    String newName = lookup.getRemappedClassNameFast(name);
+                    boolean modified = false;
+                    if (newName != null) {
+                        name = newName;
+                        modified = true;
+                    }
+                    signatureOut.appendCodePoint(type);
+                    signatureOut.append(name);
+                    signatureOut.append(';');
+                    modified |= Remapper.remapSignature(lookup, signature, ++endObject, end, signatureOut);
+                    return modified;
+                } else if (codepoint == '<') {
+                    // generics - please no
+                    // post scriptum: well, that was a bit easier than expected
+                    int openingBrackets = 1;
+                    int endGenerics = endObject;
+                    while(true) {
+                        codepoint = signature.codePointAt(++endGenerics);
+                        if (codepoint == '>' ) {
+                            if (--openingBrackets == 0) {
+                                break;
+                            }
+                        } else if (codepoint == '<') {
+                            openingBrackets++;
+                        }
+                    }
+                    String name = signature.substring(start, endObject);
+                    String newName = lookup.getRemappedClassNameFast(name);
+                    boolean modified = false;
+                    if (newName != null) {
+                        name = newName;
+                        modified = true;
+                    }
+                    signatureOut.append('L');
+                    signatureOut.append(name);
+                    signatureOut.append('<');
+                    modified |= Remapper.remapSignature(lookup, signature, endObject + 1, endGenerics++, signatureOut);
+                    signatureOut.append('>');
+                    // apparently that can be rarely be a '.', don't ask when or why exactly this occurs
+                    signatureOut.appendCodePoint(signature.codePointAt(endGenerics));
+                    modified |= Remapper.remapSignature(lookup, signature, ++endGenerics, end, signatureOut);
+                    return modified;
+                }
+            }
+            /*
+        case '+':
+            // I do not know what this one does - but it appears that it works good just like it does right now
+        case '*':
+            // wildcard - this can also be read like a regular primitive
+            // fall-through intended
+        case '(':
+        case ')':
+            // apparently our method does not break even in these cases, so we will consider them raw primitives
+        case '[':
+            // array - fall through intended as in this case they behave the same
+             */
+        default:
+            // primitive
+            signatureOut.appendCodePoint(type);
+            return Remapper.remapSignature(lookup, signature, start, end, signatureOut); // Did not modify the signature - but following operations could
+        }
+    }
+
+    /**
+     * Remap a generic signature string, as used for example in {@link MethodNode#signature}, {@link FieldNode#signature}
+     * or {@link ClassNode#signature}. As this method is fairly generic it is even capable of remapping method, field or
+     * type descriptors. However, this method is not capable of remapping internal names. If internal names should
+     * be remapped, use {@link #remapInternalName(MappingLookup, String, StringBuilder)} instead.
+     *
+     * <p>Internally, this method is recursive (in order to be able to correctly remap nested generics).
+     * This algorithm evaluates the input signature from left to right.
+     *
+     * @param lookup The {@link MappingLookup} to use in order to remap the descriptor.
+     * @param signature The signature to remap in the source namespace.
+     * @param out The {@link StringBuilder} instance to which the remapped signature should be stored into.
+     * @return True if a modification happened while remapping the signature, false otherwise - that is if false,
+     * {@link StringBuilder#toString()} of <code>out</code> will be equal to <code>signature</code>.
+     */
+    public static boolean remapSignature(@NotNull MappingLookup lookup, @NotNull String signature, @NotNull StringBuilder out) {
+        return Remapper.remapSignature(lookup, signature, 0, signature.length(), out);
+    }
+
+    @NotNull
+    private static String remapSingleDesc(@NotNull MappingLookup lookup, @NotNull String input, StringBuilder sharedBuilder) {
+        int indexofL = input.indexOf('L');
+        if (indexofL == -1) {
+            return input;
+        }
+        int length = input.length();
+        String internalName = input.substring(indexofL + 1, length - 1);
+        String newInternalName = lookup.getRemappedClassNameFast(internalName);
+        if (newInternalName == null) {
+            return input;
+        }
+        sharedBuilder.setLength(indexofL + 1);
+        sharedBuilder.setCharAt(indexofL, 'L');
+        while(indexofL != 0) {
+            sharedBuilder.setCharAt(--indexofL, '[');
+        }
+        sharedBuilder.append(newInternalName);
+        sharedBuilder.append(';');
+        return sharedBuilder.toString();
+    }
+
     @NotNull
     private final MappingLookup lookup;
 
@@ -102,33 +313,15 @@ public final class Remapper {
     }
 
     /**
-     * Remaps a field descriptor.
+     * Obtain the {@link MappingLookup} instance from which this {@link Remapper} sources all source to destination
+     * namespace name mappings. This instance is set through the constructor.
      *
-     * @param fieldDesc The old (unmapped) field descriptor
-     * @param sharedBuilder A shared cached string builder. The contents of the string builder are wiped and after the invocation the contents are undefined
-     * @return The new (remapped) field descriptor. It <b>can</b> be identity identical to the "fieldDesc" if it didn't need to be altered
-     */
-    @SuppressWarnings("null")
-    @NotNull
-    public String getRemappedFieldDescriptor(@NotNull String fieldDesc, @NotNull StringBuilder sharedBuilder) {
-        sharedBuilder.setLength(0);
-        return this.remapSingleDesc(fieldDesc, sharedBuilder);
-    }
-
-    /**
-     * Remaps a method descriptor.
-     *
-     * @param methodDesc The old (unmapped) method descriptor
-     * @param sharedBuilder A shared cached string builder. The contents of the string builder are wiped and after the invocation the contents are undefined
-     * @return The new (remapped) method descriptor. It <b>can</b> be identity identical to the "methodDesc" if it didn't need to be altered
+     * @return The {@link MappingLookup} instance used by this {@link Remapper}.
      */
     @NotNull
-    public String getRemappedMethodDescriptor(@NotNull String methodDesc, @NotNull StringBuilder sharedBuilder) {
-        sharedBuilder.setLength(0);
-        if (!this.remapSignature(methodDesc, sharedBuilder)) {
-            return methodDesc;
-        }
-        return sharedBuilder.toString();
+    @Contract(pure = true)
+    public MappingLookup getLookup() {
+        return this.lookup;
     }
 
     private void remapAnnotation(AnnotationNode annotation, StringBuilder sharedStringBuilder) {
@@ -160,7 +353,7 @@ public final class Remapper {
         if (value instanceof Type) {
             String type = ((Type) value).getDescriptor();
             sharedStringBuilder.setLength(0);
-            if (this.remapSignature(type, sharedStringBuilder)) {
+            if (Remapper.remapSignature(this.lookup, type, sharedStringBuilder)) {
                 values.set(index, Type.getType(sharedStringBuilder.toString()));
             }
         } else if (value instanceof String[]) {
@@ -192,12 +385,12 @@ public final class Remapper {
             sharedStringBuilder.setLength(0);
 
             if (type.getSort() == Type.METHOD) {
-                if (remapSignature(type.getDescriptor(), sharedStringBuilder)) {
+                if (Remapper.remapSignature(this.lookup, type.getDescriptor(), sharedStringBuilder)) {
                     bsmArgs[index] = Type.getMethodType(sharedStringBuilder.toString());
                 }
             } else if (type.getSort() == Type.OBJECT) {
                 String oldVal = type.getInternalName();
-                String remappedVal = remapInternalName(oldVal, sharedStringBuilder);
+                String remappedVal = Remapper.remapInternalName(this.lookup, oldVal, sharedStringBuilder);
                 if (oldVal != remappedVal) { // Instance comparison intended
                     bsmArgs[index] = Type.getObjectType(remappedVal);
                 }
@@ -217,7 +410,7 @@ public final class Remapper {
             }
             String desc = handle.getDesc();
             sharedStringBuilder.setLength(0);
-            if (this.remapSignature(desc, sharedStringBuilder)) {
+            if (Remapper.remapSignature(this.lookup, desc, sharedStringBuilder)) {
                 desc = sharedStringBuilder.toString();
                 modified = true;
             }
@@ -231,13 +424,13 @@ public final class Remapper {
         }
     }
 
-    private void remapFrameNode(FrameNode frameNode, StringBuilder sharedStringBuilder) {
+    private void remapFrameNode(@NotNull FrameNode frameNode, @NotNull StringBuilder sharedStringBuilder) {
         if (frameNode.stack != null) {
             int i = frameNode.stack.size();
             while (i-- != 0) {
                 Object o = frameNode.stack.get(i);
                 if (o instanceof String) {
-                    frameNode.stack.set(i, this.remapInternalName((String) o, sharedStringBuilder));
+                    frameNode.stack.set(i, Remapper.remapInternalName(this.lookup, (String) o, sharedStringBuilder));
                 }
             }
         }
@@ -246,21 +439,13 @@ public final class Remapper {
             while (i-- != 0) {
                 Object o = frameNode.local.get(i);
                 if (o instanceof String) {
-                    frameNode.stack.set(i, this.remapInternalName((String) o, sharedStringBuilder));
+                    frameNode.stack.set(i, Remapper.remapInternalName(this.lookup, (String) o, sharedStringBuilder));
                 }
             }
         }
     }
 
-    private String remapInternalName(String internalName, StringBuilder sharedStringBuilder) {
-        if (internalName.codePointAt(0) == '[') {
-            return this.remapSingleDesc(internalName, sharedStringBuilder);
-        } else {
-            return this.lookup.getRemappedClassName(internalName);
-        }
-    }
-
-    private void remapModule(ModuleNode module, StringBuilder sharedStringBuilder) {
+    private void remapModule(@NotNull ModuleNode module, @NotNull StringBuilder sharedStringBuilder) {
         // This is really stupid design
         if (module.mainClass != null) {
             module.mainClass = this.lookup.getRemappedClassName(module.mainClass);
@@ -268,7 +453,7 @@ public final class Remapper {
         if (module.uses != null) {
             int i = module.uses.size();
             while (i-- != 0) {
-                module.uses.set(i, this.remapInternalName(module.uses.get(i), sharedStringBuilder));
+                module.uses.set(i, Remapper.remapInternalName(this.lookup, module.uses.get(i), sharedStringBuilder));
             }
         }
     }
@@ -346,7 +531,7 @@ public final class Remapper {
 
         if (node.outerMethodDesc != null) {
             sharedBuilder.setLength(0);
-            if (this.remapSignature(node.outerMethodDesc, sharedBuilder)) {
+            if (Remapper.remapSignature(this.lookup, node.outerMethodDesc, sharedBuilder)) {
                 node.outerMethodDesc = sharedBuilder.toString();
             }
         }
@@ -362,7 +547,7 @@ public final class Remapper {
             // This requires eventual testing as I do not make use of codebases with Java9+ features.
             for (RecordComponentNode record : node.recordComponents) {
                 sharedBuilder.setLength(0);
-                if (this.remapSignature(record.descriptor, sharedBuilder)) {
+                if (Remapper.remapSignature(this.lookup, record.descriptor, sharedBuilder)) {
                     record.descriptor = sharedBuilder.toString();
                 }
                 this.remapAnnotations(record.invisibleAnnotations, sharedBuilder);
@@ -371,7 +556,7 @@ public final class Remapper {
                 this.remapAnnotations(record.visibleTypeAnnotations, sharedBuilder);
                 if (record.signature != null) {
                     sharedBuilder.setLength(0);
-                    if (this.remapSignature(record.signature, sharedBuilder)) { // FIXME Especially that one looks debatable - do record signatures really follow "normal" signature behaviour
+                    if (Remapper.remapSignature(this.lookup, record.signature, sharedBuilder)) { // FIXME Especially that one looks debatable - do record signatures really follow "normal" signature behaviour
                         record.signature = sharedBuilder.toString();
                     }
                 }
@@ -382,12 +567,12 @@ public final class Remapper {
             sharedBuilder.setLength(0);
             // Class signatures are formatted differently than method or field signatures, but we can just ignore this
             // caveat here as the method will consider the invalid tokens are primitive objects. (sometimes laziness pays off)
-            if (this.remapSignature(node.signature, sharedBuilder)) {
+            if (Remapper.remapSignature(this.lookup, node.signature, sharedBuilder)) {
                 node.signature = sharedBuilder.toString();
             }
         }
 
-        if (node.superName != null) {
+        if (!Objects.isNull(node.superName)) {
             node.superName = this.lookup.getRemappedClassName(node.superName);
         }
 
@@ -419,11 +604,11 @@ public final class Remapper {
         if (typeType == '[' || typeType == 'L') {
             // Remap descriptor
             sharedStringBuilder.setLength(0);
-            field.desc = this.remapSingleDesc(field.desc, sharedStringBuilder);
+            field.desc = Remapper.remapSingleDesc(this.lookup, field.desc, sharedStringBuilder);
             // Remap signature
             if (field.signature != null) {
                 sharedStringBuilder.setLength(0);
-                if (this.remapSignature(field.signature, sharedStringBuilder)) {
+                if (Remapper.remapSignature(this.lookup, field.signature, sharedStringBuilder)) {
                     field.signature = sharedStringBuilder.toString();
                 }
             }
@@ -514,7 +699,7 @@ public final class Remapper {
                     }
                     if (lvn.signature != null) {
                         sharedStringBuilder.setLength(0);
-                        if (this.remapSignature(lvn.signature, sharedStringBuilder)) {
+                        if (Remapper.remapSignature(this.lookup, lvn.signature, sharedStringBuilder)) {
                             lvn.signature = sharedStringBuilder.toString();
                         }
                     }
@@ -529,13 +714,13 @@ public final class Remapper {
             this.remapAnnotations(catchBlock.invisibleTypeAnnotations, sharedStringBuilder);
         }
         sharedStringBuilder.setLength(0);
-        if (this.remapSignature(method.desc, sharedStringBuilder)) {
+        if (Remapper.remapSignature(this.lookup, method.desc, sharedStringBuilder)) {
             // The field signature and method desc system are similar enough that this works;
             method.desc = sharedStringBuilder.toString();
         }
         if (method.signature != null) {
             sharedStringBuilder.setLength(0);
-            if (this.remapSignature(method.signature, sharedStringBuilder)) {
+            if (Remapper.remapSignature(this.lookup, method.signature, sharedStringBuilder)) {
                 // Method signature and field signature are also similar enough
                 method.signature = sharedStringBuilder.toString();
             }
@@ -547,13 +732,13 @@ public final class Remapper {
             method.annotationDefault = annotationList.get(0);
         }
         InsnList instructions = method.instructions;
-        if (instructions != null && instructions.size() != 0) {
+        if (instructions.size() != 0) {
             AbstractInsnNode insn = instructions.getFirst();
             while (insn != null) {
                 if (insn instanceof FieldInsnNode) {
                     FieldInsnNode instruction = (FieldInsnNode) insn;
                     instruction.name = this.lookup.getRemappedFieldName(instruction.owner, instruction.name, instruction.desc);
-                    instruction.desc = this.remapSingleDesc(instruction.desc, sharedStringBuilder);
+                    instruction.desc = Remapper.remapSingleDesc(this.lookup, instruction.desc, sharedStringBuilder);
                     instruction.owner = this.lookup.getRemappedClassName(instruction.owner);
                 } else if (insn instanceof FrameNode) {
                     this.remapFrameNode((FrameNode) insn, sharedStringBuilder);
@@ -565,14 +750,14 @@ public final class Remapper {
                         this.remapBSMArg(bsmArgs, i, sharedStringBuilder);
                     }
                     sharedStringBuilder.setLength(0);
-                    if (this.remapSignature(specialisedInsn.desc, sharedStringBuilder)) {
+                    if (Remapper.remapSignature(this.lookup, specialisedInsn.desc, sharedStringBuilder)) {
                         specialisedInsn.desc = sharedStringBuilder.toString();
                     }
                 } else if (insn instanceof LdcInsnNode) {
                     LdcInsnNode specialisedInsn = (LdcInsnNode) insn;
                     if (specialisedInsn.cst instanceof Type) {
                         String descString = ((Type) specialisedInsn.cst).getDescriptor();
-                        String newDescString = this.remapSingleDesc(descString, sharedStringBuilder);
+                        String newDescString = Remapper.remapSingleDesc(this.lookup, descString, sharedStringBuilder);
                         if (descString != newDescString) {
                             specialisedInsn.cst = Type.getType(newDescString);
                         }
@@ -585,129 +770,23 @@ public final class Remapper {
                         instruction.owner = this.lookup.getRemappedClassName(instruction.owner);
                     } else {
                         sharedStringBuilder.setLength(0);
-                        instruction.owner = this.remapSingleDesc(instruction.owner, sharedStringBuilder);
+                        instruction.owner = Remapper.remapSingleDesc(this.lookup, instruction.owner, sharedStringBuilder);
                     }
                     sharedStringBuilder.setLength(0);
-                    if (this.remapSignature(instruction.desc, sharedStringBuilder)) {
+                    if (Remapper.remapSignature(this.lookup, instruction.desc, sharedStringBuilder)) {
                         instruction.desc = sharedStringBuilder.toString();
                     }
                 } else if (insn instanceof MultiANewArrayInsnNode) {
                     MultiANewArrayInsnNode instruction = (MultiANewArrayInsnNode) insn;
-                    instruction.desc = this.remapSingleDesc(instruction.desc, sharedStringBuilder);
+                    instruction.desc = Remapper.remapSingleDesc(this.lookup, instruction.desc, sharedStringBuilder);
                 } else if (insn instanceof TypeInsnNode) {
                     TypeInsnNode instruction = (TypeInsnNode) insn;
-                    instruction.desc = this.remapInternalName(instruction.desc, sharedStringBuilder);
+                    instruction.desc = Remapper.remapInternalName(this.lookup, instruction.desc, sharedStringBuilder);
                 }
                 insn = insn.getNext();
             }
         }
 
         return this;
-    }
-
-    private boolean remapSignature(String signature, StringBuilder out) {
-        return this.remapSignature(out, signature, 0, signature.length());
-    }
-
-    private boolean remapSignature(StringBuilder signatureOut, String signature, int start, int end) {
-        if (start == end) {
-            return false;
-        }
-        int type = signature.codePointAt(start++);
-        switch (type) {
-        case 'T':
-            // generics type parameter
-            // fall-through intended as they are similar enough in format compared to objects
-        case 'L':
-            // object
-            // find the end of the internal name of the object
-            int endObject = start;
-            while(true) {
-                // this will skip a character, but this is not interesting as class names have to be at least 1 character long
-                int codepoint = signature.codePointAt(++endObject);
-                if (codepoint == ';') {
-                    String name = signature.substring(start, endObject);
-                    String newName = this.lookup.getRemappedClassNameFast(name);
-                    boolean modified = false;
-                    if (newName != null) {
-                        name = newName;
-                        modified = true;
-                    }
-                    signatureOut.appendCodePoint(type);
-                    signatureOut.append(name);
-                    signatureOut.append(';');
-                    modified |= remapSignature(signatureOut, signature, ++endObject, end);
-                    return modified;
-                } else if (codepoint == '<') {
-                    // generics - please no
-                    // post scriptum: well, that was a bit easier than expected
-                    int openingBrackets = 1;
-                    int endGenerics = endObject;
-                    while(true) {
-                        codepoint = signature.codePointAt(++endGenerics);
-                        if (codepoint == '>' ) {
-                            if (--openingBrackets == 0) {
-                                break;
-                            }
-                        } else if (codepoint == '<') {
-                            openingBrackets++;
-                        }
-                    }
-                    String name = signature.substring(start, endObject);
-                    String newName = this.lookup.getRemappedClassNameFast(name);
-                    boolean modified = false;
-                    if (newName != null) {
-                        name = newName;
-                        modified = true;
-                    }
-                    signatureOut.append('L');
-                    signatureOut.append(name);
-                    signatureOut.append('<');
-                    modified |= remapSignature(signatureOut, signature, endObject + 1, endGenerics++);
-                    signatureOut.append('>');
-                    // apparently that can be rarely be a '.', don't ask when or why exactly this occurs
-                    signatureOut.appendCodePoint(signature.codePointAt(endGenerics));
-                    modified |= remapSignature(signatureOut, signature, ++endGenerics, end);
-                    return modified;
-                }
-            }
-            /*
-        case '+':
-            // I do not know what this one does - but it appears that it works good just like it does right now
-        case '*':
-            // wildcard - this can also be read like a regular primitive
-            // fall-through intended
-        case '(':
-        case ')':
-            // apparently our method does not break even in these cases, so we will consider them raw primitives
-        case '[':
-            // array - fall through intended as in this case they behave the same
-             */
-        default:
-            // primitive
-            signatureOut.appendCodePoint(type);
-            return remapSignature(signatureOut, signature, start, end); // Did not modify the signature - but following operations could
-        }
-    }
-
-    private String remapSingleDesc(String input, StringBuilder sharedBuilder) {
-        int indexofL = input.indexOf('L');
-        if (indexofL == -1) {
-            return input;
-        }
-        int length = input.length();
-        String internalName = input.substring(indexofL + 1, length - 1);
-        String newInternalName = this.lookup.getRemappedClassNameFast(internalName);
-        if (newInternalName == null) {
-            return input;
-        }
-        sharedBuilder.setLength(indexofL + 1);
-        sharedBuilder.setCharAt(indexofL, 'L');
-        while(indexofL != 0) {
-            sharedBuilder.setCharAt(--indexofL, '[');
-        }
-        sharedBuilder.append(newInternalName);
-        sharedBuilder.append(';');
-        return sharedBuilder.toString();
     }
 }
