@@ -439,7 +439,7 @@ public final class Remapper {
             while (i-- != 0) {
                 Object o = frameNode.local.get(i);
                 if (o instanceof String) {
-                    frameNode.stack.set(i, Remapper.remapInternalName(this.lookup, (String) o, sharedStringBuilder));
+                    frameNode.local.set(i, Remapper.remapInternalName(this.lookup, (String) o, sharedStringBuilder));
                 }
             }
         }
