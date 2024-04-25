@@ -97,4 +97,11 @@ public final class MemberRef {
     public int hashCode() {
         return this.owner.hashCode() ^ this.name.hashCode() ^ this.desc.hashCode();
     }
+
+    @Override
+    @NotNull
+    @Contract(pure = true)
+    public String toString() {
+        return this.owner + "." + this.name + " " + this.desc;
+    }
 }
