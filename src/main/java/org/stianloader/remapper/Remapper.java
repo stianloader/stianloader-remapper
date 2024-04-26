@@ -281,7 +281,7 @@ public final class Remapper {
     private static String remapSingleDesc(@NotNull MappingLookup lookup, @NotNull String input, StringBuilder sharedBuilder) {
         int indexofL = input.indexOf('L');
         if (indexofL == -1) {
-            return input;
+            return input; // Primitive or array of primitives
         }
         int length = input.length();
         String internalName = input.substring(indexofL + 1, length - 1);
@@ -320,7 +320,7 @@ public final class Remapper {
      */
     @NotNull
     @Contract(pure = true)
-    public MappingLookup getLookup() {
+    public final MappingLookup getLookup() {
         return this.lookup;
     }
 
@@ -665,43 +665,12 @@ public final class Remapper {
         }
         if (method.localVariables != null) {
             for (LocalVariableNode lvn : method.localVariables) {
-                int typeType = lvn.desc.charAt(0);
-                boolean isObjectArray = typeType == '[';
-                int arrayDimension = 0;
-                if (isObjectArray) {
-                    if (lvn.desc.codePointBefore(lvn.desc.length()) == ';') {
-                        // calculate depth
-                        int arrayType;
-                        do {
-                            arrayType = lvn.desc.charAt(++arrayDimension);
-                        } while (arrayType == '[');
-                    } else {
-                        isObjectArray = false;
-                    }
-                }
-                if (isObjectArray || typeType == 'L') {
-                    // Remap descriptor
-                    Type type = Type.getType(lvn.desc);
-                    String internalName = type.getInternalName();
-                    String newInternalName = this.lookup.getRemappedClassNameFast(internalName);
-                    if (newInternalName != null) {
-                        if (isObjectArray) {
-                            sharedStringBuilder.setLength(arrayDimension);
-                            for (int i = 0; i < arrayDimension; i++) {
-                                sharedStringBuilder.setCharAt(i, '[');
-                            }
-                            sharedStringBuilder.append(newInternalName);
-                            sharedStringBuilder.append(';');
-                            lvn.desc = sharedStringBuilder.toString();
-                        } else {
-                            lvn.desc = 'L' + newInternalName + ';';
-                        }
-                    }
-                    if (lvn.signature != null) {
-                        sharedStringBuilder.setLength(0);
-                        if (Remapper.remapSignature(this.lookup, lvn.signature, sharedStringBuilder)) {
-                            lvn.signature = sharedStringBuilder.toString();
-                        }
+                lvn.desc = Remapper.remapSingleDesc(this.lookup, lvn.desc, sharedStringBuilder);
+                String signature = lvn.signature;
+                if (signature != null) {
+                    sharedStringBuilder.setLength(0);
+                    if (Remapper.remapSignature(this.lookup, signature, sharedStringBuilder)) {
+                        lvn.signature = sharedStringBuilder.toString();
                     }
                 }
             }
