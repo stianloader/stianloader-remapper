@@ -713,11 +713,16 @@ public final class Remapper {
                     this.remapFrameNode((FrameNode) insn, sharedStringBuilder);
                 } else if (insn instanceof InvokeDynamicInsnNode) {
                     InvokeDynamicInsnNode specialisedInsn = (InvokeDynamicInsnNode) insn;
+                    String lambdaType = specialisedInsn.desc.substring(specialisedInsn.desc.indexOf(')') + 2, specialisedInsn.desc.length() - 1);
                     Object[] bsmArgs = specialisedInsn.bsmArgs;
+
+                    specialisedInsn.name = this.lookup.getRemappedMethodName(lambdaType, specialisedInsn.name, ((Type) bsmArgs[0]).getDescriptor());
+
                     int i = bsmArgs.length;
                     while (i-- != 0) {
                         this.remapBSMArg(bsmArgs, i, sharedStringBuilder);
                     }
+
                     sharedStringBuilder.setLength(0);
                     if (Remapper.remapSignature(this.lookup, specialisedInsn.desc, sharedStringBuilder)) {
                         specialisedInsn.desc = sharedStringBuilder.toString();
