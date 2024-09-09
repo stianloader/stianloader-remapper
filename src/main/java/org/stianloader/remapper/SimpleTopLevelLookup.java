@@ -178,8 +178,8 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
                     // Someone (likely a supertype) already added the entry - safe to assume it is being overwritten by this class
                     continue;
                 }
-                if ((superMethod.access & Opcodes.ACC_STATIC) != 0 || (superMethod.access & Opcodes.ACC_PRIVATE) != 0) {
-                    // ACC_STATIC or ACC_PRIVATE is set - no need for inheritance
+                if ((superMethod.access & Opcodes.ACC_PRIVATE) != 0) {
+                    // ACC_PRIVATE is set - no need for inheritance
                     // -> The list is as such immutable
                     realms.put(myLoc, new MemberRealm(myLoc, Collections.singleton(superType)));
                 } else if ((superMethod.access & Opcodes.ACC_PUBLIC) != 0 || (superMethod.access & Opcodes.ACC_PROTECTED) != 0) {
@@ -244,7 +244,7 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
                     // Someone (likely a supertype) already added the entry - safe to assume it is being overwritten by this class
                     continue;
                 }
-                if ((superField.access & Opcodes.ACC_STATIC) != 0 || (superField.access & Opcodes.ACC_PRIVATE) != 0) {
+                if ((superField.access & Opcodes.ACC_PRIVATE) != 0) {
                     // ACC_STATIC or ACC_PRIVATE is set - no need for inheritance
                     // -> The list is as such immutable
                     realms.put(myLoc, new MemberRealm(myLoc, Collections.singleton(superType)));
