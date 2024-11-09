@@ -43,10 +43,10 @@ public class HierarchyAwareMappingDelegator<T extends MappingLookup & MappingSin
         /**
          * Obtain the root-level definition of a member.
          *
-         * <p>Beware that this method may be called for fields, too.
+         * <p>Beware that this method may be called for fields and static methods, too.
          * It is imperative that the declaration of fields is also followed as it is possible for javac to emit
-         * GETFIELD requests where the owner does not match the class where the field in question is defined -
-         * this for example might be produced by anonymous enum members.
+         * GETFIELD <b>and PUTFIELD</b> requests where the owner does not match the class where the field in question
+         * is defined - this for example might be produced by anonymous enum members.
          *
          * <p>Implementors are free to handle bridge methods as they please - the only requirement is that
          * they do it persistently and that implementors should be aware that this would cause the bridge methods

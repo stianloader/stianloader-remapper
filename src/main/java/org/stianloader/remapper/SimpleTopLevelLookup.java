@@ -72,6 +72,11 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
             this.rootDefinition = rootDefinition;
             this.realmMembers = realmMembers;
         }
+
+        @Override
+        public String toString() {
+            return "MemberRealm[root='" + this.rootDefinition + "',members='" + this.realmMembers + "']";
+        }
     }
 
     /**
@@ -112,7 +117,6 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
                 }
                 Set<T> set = input.get(queued);
                 if (set != null) {
-                    collected.addAll(set);
                     queue.addAll(set);
                 }
             }
@@ -245,7 +249,7 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
                     continue;
                 }
                 if ((superField.access & Opcodes.ACC_PRIVATE) != 0) {
-                    // ACC_STATIC or ACC_PRIVATE is set - no need for inheritance
+                    // ACC_PRIVATE is set - no need for inheritance
                     // -> The list is as such immutable
                     realms.put(myLoc, new MemberRealm(myLoc, Collections.singleton(superType)));
                 } else if ((superField.access & Opcodes.ACC_PUBLIC) != 0 || (superField.access & Opcodes.ACC_PROTECTED) != 0) {
