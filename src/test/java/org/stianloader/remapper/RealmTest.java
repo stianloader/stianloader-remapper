@@ -47,9 +47,9 @@ public class RealmTest {
         Map<@NotNull MemberRef, @NotNull MemberRealm> realms = SimpleTopLevelLookup.realmsOf(testClasses);
 
         assertEquals(4, realms.size());
-        assertEquals(4, realms.get(new MemberRef("A","a", "()V")).realmMembers.size());
-        assertEquals(4, realms.get(new MemberRef("B","a", "()V")).realmMembers.size());
-        assertEquals(4, realms.get(new MemberRef("C","a", "()V")).realmMembers.size());
-        assertEquals(4, realms.get(new MemberRef("D","a", "()V")).realmMembers.size());
+        assertEquals(4, realms.get(new MemberRef("A", "a", "()V")).realmMembers.size());
+        assertEquals(4, realms.get(new MemberRef("B", "a", "()V")).realmMembers.size());
+        assertEquals(4, realms.get(new MemberRef("C", "a", "()V")).realmMembers.size());
+        assertEquals(4, realms.get(new MemberRef("D", "a", "()V")).realmMembers.size());
     }
 }

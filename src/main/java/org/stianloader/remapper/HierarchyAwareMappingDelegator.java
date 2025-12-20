@@ -105,24 +105,6 @@ public class HierarchyAwareMappingDelegator<T extends MappingLookup & MappingSin
 
     @Override
     @NotNull
-    public HierarchyAwareMappingDelegator<T> remapClass(@NotNull String srcName, @NotNull String dstName) {
-        this.delegate.remapClass(srcName, dstName);
-        return this;
-    }
-
-    @Override
-    @NotNull
-    public HierarchyAwareMappingDelegator<T> remapMember(@NotNull MemberRef srcRef, @NotNull String dstName) {
-        MemberRef topLevel = this.definitionLookup.getDefinition(srcRef);
-        if (srcRef.getDesc().codePointAt(0) != topLevel.getDesc().codePointAt(0)) {
-            throw new IllegalStateException("Definition lookup altered the type of member from " + srcRef.getDesc() + " to " + topLevel.getDesc() + ", which is not permitted.");
-        }
-        this.delegate.remapMember(srcRef, dstName);
-        return this;
-    }
-
-    @Override
-    @NotNull
     public String getRemappedClassName(@NotNull String srcName) {
         return this.delegate.getRemappedClassName(srcName);
     }
@@ -151,5 +133,44 @@ public class HierarchyAwareMappingDelegator<T extends MappingLookup & MappingSin
             throw new IllegalStateException("Definition lookup altered the type of member from " + srcDesc + " to " + topLevel.getDesc() + ", which is not permitted.");
         }
         return this.delegate.getRemappedMethodName(topLevel.getOwner(), topLevel.getName(), topLevel.getDesc());
+    }
+
+    @Override
+    @Nullable
+    public String getRemappedParameterName(@NotNull String srcOwner, @NotNull String srcName, @NotNull String srcDesc, int paramIndex, boolean isStatic) {
+        MemberRef topLevel = this.definitionLookup.getDefinition(new MemberRef(srcOwner, srcName, srcDesc));
+        if (srcDesc.codePointAt(0) != topLevel.getDesc().codePointAt(0)) {
+            throw new IllegalStateException("Definition lookup altered the type of member from " + srcDesc + " to " + topLevel.getDesc() + ", which is not permitted.");
+        }
+        return this.delegate.getRemappedParameterName(topLevel.getOwner(), topLevel.getName(), topLevel.getDesc(), paramIndex, isStatic);
+    }
+
+    @Override
+    @NotNull
+    public HierarchyAwareMappingDelegator<T> remapClass(@NotNull String srcName, @NotNull String dstName) {
+        this.delegate.remapClass(srcName, dstName);
+        return this;
+    }
+
+    @Override
+    @NotNull
+    public HierarchyAwareMappingDelegator<T> remapMember(@NotNull MemberRef srcRef, @NotNull String dstName) {
+        MemberRef topLevel = this.definitionLookup.getDefinition(srcRef);
+        if (srcRef.getDesc().codePointAt(0) != topLevel.getDesc().codePointAt(0)) {
+            throw new IllegalStateException("Definition lookup altered the type of member from " + srcRef.getDesc() + " to " + topLevel.getDesc() + ", which is not permitted.");
+        }
+        this.delegate.remapMember(topLevel, dstName);
+        return this;
+    }
+
+    @Override
+    @NotNull
+    public MappingSink remapParameter(@NotNull String srcOwner, @NotNull String srcMethodName, @NotNull String srcDesc, int paramIndex, @NotNull String destParamName) {
+        MemberRef topLevel = this.definitionLookup.getDefinition(new MemberRef(srcOwner, destParamName, srcDesc));
+        if (srcDesc.codePointAt(0) != topLevel.getDesc().codePointAt(0)) {
+            throw new IllegalStateException("Definition lookup altered the type of member from " + srcDesc + " to " + topLevel.getDesc() + ", which is not permitted.");
+        }
+        this.delegate.remapParameter(topLevel.getOwner(), topLevel.getName(), topLevel.getDesc(), paramIndex, destParamName);
+        return this;
     }
 }

@@ -1,5 +1,6 @@
 package org.stianloader.remapper;
 
+import org.jetbrains.annotations.ApiStatus.AvailableSince;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.objectweb.asm.Type;
@@ -83,4 +84,38 @@ public interface MappingSink {
     @Contract(mutates = "this", pure = false, value = "_, _ -> this")
     @NotNull
     MappingSink remapMember(@NotNull MemberRef srcRef, @NotNull String dstName);
+
+    /**
+     * Remaps a method parameter.
+     *
+     * <p>The {@code paramIndex} argument is 0-indexed. It does not distinguish
+     * between computational categories. Or in other words, for both {@code (IZ)V} and
+     * {@code (JZ)V} the boolean parameter corresponds to a {@code paramIndex} value
+     * of 1, while the integer and long have a value of 0.
+     *
+     * <p>Callers may throw an {@link IndexOutOfBoundsException} if {@code paramIndex}
+     * is below 0 or above the amount of parameters as discernible by {@code srcDesc}.
+     * As such, this method cannot be used to remap LVT entries, even though they are
+     * quite similar in structure. This is because LVT entries can be reused.
+     * By default this method does not do any checks whether {@code paramIndex} is
+     * a valid value. This is done for performance reasons.
+     *
+     * <p>If this {@link MappingSink} instance does not support remapping method
+     * parameters then an {@link UnsupportedOperationException} should be thrown.
+     * In cases where libraries are used that link against an older version of
+     * stianloader-remapper (namely 0.1.X and earlier), an {@link AbstractMethodError}
+     * may be thrown when attempting to call this method.
+     *
+     * @param srcOwner The name of the owner of the method in the source namespace.
+     * @param srcMethodName The name of the method in the source namespace.
+     * @param srcDesc The descriptor of the method in the source namespace.
+     * @param paramIndex The index of the parameter, excluding the implied {@code this} argument on non-static methods.
+     * @param destParamName The name of the parameter in the destination namespace.
+     * @return The current {@link MappingSink} instance, for chaining.
+     * @since 0.2.0-a20251220
+     */
+    @Contract(mutates = "this", pure = false, value = "_, _, _, _, _ -> this")
+    @NotNull
+    @AvailableSince("0.2.0-a20251220")
+    MappingSink remapParameter(@NotNull String srcOwner, @NotNull String srcMethodName, @NotNull String srcDesc, int paramIndex, @NotNull String destParamName);
 }

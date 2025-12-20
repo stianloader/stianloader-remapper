@@ -6,6 +6,7 @@ import java.util.Map;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.objectweb.asm.Type;
 
 /**
  * A simple implementation of {@link MappingLookup} which can be mutated via the implemented {@link MappingSink}
@@ -49,6 +50,7 @@ public class SimpleMappingLookup implements MappingLookup, MappingSink {
 
     private final Map<String, String> classNames = new HashMap<>();
     private final Map<MemberRef, String> memberNames = new HashMap<>();
+    private final Map<MemberRef, String[]> parameterNames = new HashMap<>();
 
     @SuppressWarnings("null") // The default value is non-null so #getOrDefault cannot return a null value
     @Override
@@ -77,6 +79,13 @@ public class SimpleMappingLookup implements MappingLookup, MappingSink {
         return this.memberNames.getOrDefault(new MemberRef(srcOwner, srcName, srcDesc), srcName);
     }
 
+    @Override
+    @Nullable
+    public String getRemappedParameterName(@NotNull String srcOwner, @NotNull String srcName, @NotNull String srcDesc, int paramIndex, boolean isStatic) {
+        String[] params = this.parameterNames.get(new MemberRef(srcOwner, srcName, srcDesc));
+        return params == null ? null : params[paramIndex];
+    }
+
     @Contract(mutates = "this", pure = false, value = "_, _ -> this")
     @Override
     @NotNull
@@ -102,6 +111,20 @@ public class SimpleMappingLookup implements MappingLookup, MappingSink {
             }
         }
         this.memberNames.put(srcRef, dstName);
+        return this;
+    }
+
+    @Override
+    @NotNull
+    public MappingSink remapParameter(@NotNull String srcOwner, @NotNull String srcMethodName, @NotNull String srcDesc, int paramIndex, @NotNull String destParamName) {
+        this.parameterNames.compute(new MemberRef(srcOwner, destParamName, srcDesc), (key, parameters) -> {
+            if (parameters == null) {
+                parameters = new String[Type.getArgumentCount(srcDesc)];
+            }
+
+            parameters[paramIndex] = destParamName;
+            return parameters;
+        });
         return this;
     }
 }

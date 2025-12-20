@@ -3,6 +3,7 @@ package org.stianloader.remapper;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.ApiStatus.AvailableSince;
 import org.objectweb.asm.Type;
 
 /**
@@ -45,6 +46,7 @@ import org.objectweb.asm.Type;
  * no thread safety and concurrency guarantees.
  */
 public interface MappingLookup {
+
     /**
      * Obtains the name of the class in the destination namespace (or in laymen's
      * terms the remapped name). If the class name in the source namespace is equal
@@ -129,4 +131,46 @@ public interface MappingLookup {
     @NotNull
     @Contract(pure = true)
     String getRemappedMethodName(@NotNull String srcOwner, @NotNull String srcName, @NotNull String srcDesc);
+
+    /**
+     * Obtains the name of the parameter in the destination namespace (or in laymen's
+     * terms the remapped name of the parameter). Should the name of the parameter
+     * not be known in the destination namespace, then {@code null} is returned.
+     * This is the default behaviour of this method.
+     *
+     * <p>The {@code paramIndex} argument is 0-indexed. It does not distinguish
+     * between computational categories. Or in other words, for both {@code (IZ)V} and
+     * {@code (JZ)V} the boolean parameter corresponds to a {@code paramIndex} value
+     * of 1, while the integer and long have a value of 0.
+     *
+     * <p>Callers may throw an {@link IndexOutOfBoundsException} if {@code paramIndex}
+     * is below 0 or above the amount of parameters as discernible by {@code srcDesc}.
+     * As such, this method cannot be used to remap LVT entries, even though they are
+     * quite similar in structure. This is because LVT entries can be reused.
+     * By default this method does not do any checks whether {@code paramIndex} is
+     * a valid value. This is done for performance reasons.
+     *
+     * <p>Implementations of this method are encouraged to not throw if possible, unless
+     * for reasons described above. While it theoretically makes sense to throw an
+     * exception in cases where a method is known to not exist, this is generally
+     * rarely the case.
+     *
+     * <p>If this {@link MappingLookup} instance does not support remapping parameters,
+     * then {@code null} should be returned unconditionally, without throwing outside
+     * of aforementioned reasons.
+     *
+     * @param srcOwner The name of the owner of the member in the source namespace.
+     * @param srcName The name of the member in the source namespace.
+     * @param srcDesc The descriptor of the member (where as classes are all in the source namespace).
+     * @param paramIndex The index of the parameter, excluding the implied {@code this} parameter.
+     * @param isStaticMethod Whether the method is static. Used when working with mappings formats such as Enigma, TINYv2, or TSRG.
+     * @return The name of the parameter in the destination namespace, or {@code null} if not applicable.
+     * @since 0.2.0-a20251220
+     */
+    @Nullable
+    @Contract(pure = true)
+    @AvailableSince("0.2.0-a20251220")
+    public default String getRemappedParameterName(@NotNull String srcOwner, @NotNull String srcName, @NotNull String srcDesc, int paramIndex, boolean isStaticMethod) {
+        return null;
+    }
 }

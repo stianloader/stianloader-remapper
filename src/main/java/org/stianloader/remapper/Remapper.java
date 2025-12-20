@@ -7,6 +7,7 @@ import java.util.Objects;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.objectweb.asm.Handle;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
@@ -23,6 +24,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.ModuleNode;
 import org.objectweb.asm.tree.MultiANewArrayInsnNode;
+import org.objectweb.asm.tree.ParameterNode;
 import org.objectweb.asm.tree.RecordComponentNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -33,7 +35,10 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * to go through an intermediary store-to-file mode.
  *
  * <p>Additionally, this is a remapper that is only a remapper. More specifically, it will only remap - but not
- * change your access flags, LVT entries or anything else that might not be intuitive.
+ * change your access flags, LVT entries or anything else that might not be intuitive. That being said,
+ * <b>existing</b> LVT entries might get edited in order to support parameter remapping, though it is not guaranteed
+ * to do so at this time (2025-12-20) and it will depend on the structure of the method. Further, it will not generate
+ * LVT entries for parameters without LVT entries.
  *
  * <p>The names of the destination namespace (or the remapped names in laymen's terms) are provided by the
  * {@link MappingLookup} instance supplied through the {@link Remapper#Remapper(MappingLookup) constructor}
@@ -85,7 +90,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * <p>Remapping reflective calls are not supported due to the complexity required for such a niche feature.
  * If absolutely needed (we generally recommend wrapping the reflective operations in a way that they are redirected as needed
  * at runtime), 3rd party tools should be used. The same applies to method handles or other string constants. That being said,
- * class constants will get remapped so very simple reflective operations might still behave as intended.
+ * {@code java.lang.Class} constants will get remapped so very simple reflective operations might still behave as intended.
  */
 public final class Remapper {
 
@@ -640,6 +645,61 @@ public final class Remapper {
     @NotNull
     @Contract(pure = false, mutates = "param2, param3", value = "_, _, _ -> this")
     public Remapper remapNode(@NotNull String owner, @NotNull MethodNode method, @NotNull StringBuilder sharedStringBuilder) {
+
+        List<ParameterNode> parameters = method.parameters;
+
+        if (parameters != null) {
+            int i = 0;
+
+            for (ParameterNode parameter : parameters) {
+                try {
+                    parameter.name = this.getLookup().getRemappedParameterName(owner, method.name, method.desc, i++, (method.access & Opcodes.ACC_STATIC) != 0);
+                } catch (AbstractMethodError | UnsupportedOperationException ignored) { }
+            }
+
+            List<LocalVariableNode> lvt = method.localVariables;
+
+            if (lvt != null) {
+                DescString dString = new DescString(method.desc);
+                int paramCount = Type.getArgumentCount(method.desc);
+                int[] paramIndices = new int[paramCount * 2 + 1];
+                i = 0;
+                int j = (method.access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+
+                while (i < (paramIndices.length / 2)) {
+                    int type = dString.nextReferenceType();
+                    if (type == 'J' || type == 'D') {
+                        paramIndices[j++] = i;
+                    }
+                    paramIndices[j++] = i++;
+                }
+
+                for (LocalVariableNode lvn : lvt) {
+                    if (lvn.index >= paramIndices.length) {
+                        continue;
+                    }
+
+                    int paramIndex = paramIndices[lvn.index];
+
+                    if (lvn.index == 0 && (method.access & Opcodes.ACC_STATIC) == 0) { // Do not remap 'this'
+                        continue;
+                    }
+
+//                    System.out.println(lvn.index + "." + method.desc + "..." + lvn.name + ":::" + lvn.start + ":-:" + lvn.end);
+//                  System.out.println("PS+" + lvn.start.getPrevious() + "..." + lvn.start.getNext() + ";;PE+" + lvn.end.getPrevious() + "..." + lvn.end.getNext());
+
+                    if (lvn.start.getPrevious() == null && lvn.end.getNext() == null) {
+                        try {
+                            String newName =  this.getLookup().getRemappedParameterName(owner, method.name, method.desc, paramIndex, (method.access & Opcodes.ACC_STATIC) != 0);
+                            if (newName != null) {
+                                lvn.name = newName;
+                            }
+                        } catch (UnsupportedOperationException | AbstractMethodError ignored) { }
+                    }
+                }
+            }
+        }
+
         method.name = this.lookup.getRemappedMethodName(owner, method.name, method.desc);
         {
             int i = method.exceptions.size();
