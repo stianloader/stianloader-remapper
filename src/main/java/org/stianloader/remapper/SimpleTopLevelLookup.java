@@ -330,7 +330,7 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
      *
      * @param nodes The list of {@link ClassNode ClassNodes} to process. Members will only be in that list.
      * @return A {@link Map} that maps {@link MemberRef member references} to their respective {@link MemberRealm}.
-     * @deprecated Use {@link #realmsOf(Collection)} instead. This method is only present for backwards compatibility.
+     * @deprecated Use {@link #realmsOf(Iterable)} instead. This method is only present for backwards compatibility.
      */
     @NotNull
     @Unmodifiable
