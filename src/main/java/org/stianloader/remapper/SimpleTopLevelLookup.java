@@ -1,6 +1,7 @@
 package org.stianloader.remapper;
 
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -12,6 +13,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.BiFunction;
 
+import org.jetbrains.annotations.ApiStatus.AvailableSince;
+import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonBlocking;
 import org.jetbrains.annotations.NotNull;
@@ -135,12 +138,14 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
      * name and descriptor, then if the method hierarchies were to intersect, then the method realms would still be treated
      * separately, even though in reality they are the same realm.
      *
-     * @param nodes The list of {@link ClassNode ClassNodes} to process. Members will only be in that list.
+     * @param nodes The {@link ClassNode ClassNodes} to process. Members will only be in that collection.
      * @return A {@link Map} that maps {@link MemberRef member references} to their respective {@link MemberRealm}.
+     * @since 0.3.0
      */
     @NotNull
     @Unmodifiable
-    public static Map<@NotNull MemberRef, @NotNull MemberRealm> realmsOf(@Unmodifiable @NotNull List<@NotNull ClassNode> nodes) {
+    @AvailableSince("0.3.0")
+    public static Map<@NotNull MemberRef, @NotNull MemberRealm> realmsOf(@Unmodifiable @NotNull Iterable<@NotNull ClassNode> nodes) {
         // FIXME Inner classes can make use of private methods and fields without an accessor in never versions of java.
         // The question here is - does that also apply to overrides?
         Map<@NotNull String, Set<@NotNull String>> immediateChildren = new HashMap<>();
@@ -313,6 +318,28 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
         return Collections.unmodifiableMap(realms);
     }
 
+    /**
+     * Compute a map of class member to member realm relations from a list of ClassNodes.
+     *
+     * <p>The classnodes within the list should include everything that is relevant to the remapping process -
+     * so the obfuscated application as well optionally the application that needs to be remapped (e.g. when remapping mods).
+     *
+     * <p>However, one currently known edge-case (technically a bug) is that when two interfaces define a method with the same
+     * name and descriptor, then if the method hierarchies were to intersect, then the method realms would still be treated
+     * separately, even though in reality they are the same realm.
+     *
+     * @param nodes The list of {@link ClassNode ClassNodes} to process. Members will only be in that list.
+     * @return A {@link Map} that maps {@link MemberRef member references} to their respective {@link MemberRealm}.
+     * @deprecated Use {@link #realmsOf(Collection)} instead. This method is only present for backwards compatibility.
+     */
+    @NotNull
+    @Unmodifiable
+    @Deprecated
+    @ScheduledForRemoval
+    public static Map<@NotNull MemberRef, @NotNull MemberRealm> realmsOf(@Unmodifiable @NotNull List<@NotNull ClassNode> nodes) {
+        return SimpleTopLevelLookup.realmsOf((Iterable<@NotNull ClassNode>) nodes);
+    }
+
     @Unmodifiable
     @NotNull
     private final Map<MemberRef, MemberRealm> realms;
@@ -324,10 +351,28 @@ public class SimpleTopLevelLookup implements TopLevelMemberLookup {
      * <p>JDK Classes or library classes that are irrelevant to the remapping process should be left out for performance
      * (especially memory-related) reasons.
      *
-     * @param applicationClasses The list of classes to analyze
+     * @param applicationClasses The classes to analyze
+     * @since 0.3.0
      */
-    public SimpleTopLevelLookup(@Unmodifiable @NotNull List<@NotNull ClassNode> applicationClasses) {
+    @AvailableSince("0.3.0")
+    public SimpleTopLevelLookup(@Unmodifiable @NotNull Iterable<@NotNull ClassNode> applicationClasses) {
         this(SimpleTopLevelLookup.realmsOf(applicationClasses));
+    }
+
+    /**
+     * Create a {@link SimpleTopLevelLookup} based on a list of {@link ClassNode ClassNodes} that are used to
+     * compute the member realms.
+     *
+     * <p>JDK Classes or library classes that are irrelevant to the remapping process should be left out for performance
+     * (especially memory-related) reasons.
+     *
+     * @param applicationClasses The list of classes to analyze
+     * @deprecated Use {@link #SimpleTopLevelLookup(Iterable)} instead. This constructor only exists for binary backwards compatibility.
+     */
+    @Deprecated
+    @ScheduledForRemoval
+    public SimpleTopLevelLookup(@Unmodifiable @NotNull List<@NotNull ClassNode> applicationClasses) {
+        this((Iterable<@NotNull ClassNode>) applicationClasses);
     }
 
     /**

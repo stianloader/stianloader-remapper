@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Unmodifiable;
+import org.jetbrains.annotations.ApiStatus.AvailableSince;
+import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval;
 import org.objectweb.asm.tree.ClassNode;
 
 /**
@@ -29,11 +31,31 @@ public class SimpleHierarchyAwareMappingLookup extends HierarchyAwareMappingDele
      * <p>JDK Classes or library classes that are irrelevant to the remapping process should be left out for performance
      * (especially memory-related) reasons.
      *
+     * @param nodes The nodes to analyze.
+     * @see SimpleTopLevelLookup#SimpleTopLevelLookup(java.util.List)
+     * @since 0.3.0
+     */
+    @AvailableSince("0.3.0")
+    public SimpleHierarchyAwareMappingLookup(@NotNull @Unmodifiable Iterable<@NotNull ClassNode> nodes) {
+        this(new SimpleMappingLookup(), new SimpleTopLevelLookup(nodes));
+    }
+
+    /**
+     * Create a {@link SimpleHierarchyAwareMappingLookup} with an empty {@link SimpleMappingLookup}.
+     * The used {@link TopLevelMemberLookup} is a {@link SimpleTopLevelLookup} which is created using the provided list
+     * of classnodes. This is mostly a convenience method.
+     *
+     * <p>JDK Classes or library classes that are irrelevant to the remapping process should be left out for performance
+     * (especially memory-related) reasons.
+     *
      * @param nodes The list of nodes to analyze.
      * @see SimpleTopLevelLookup#SimpleTopLevelLookup(java.util.List)
+     * @deprecated use {@link #SimpleHierarchyAwareMappingLookup(Iterable)} instead. This method only exists for backwards compatibility.
      */
+    @Deprecated
+    @ScheduledForRemoval
     public SimpleHierarchyAwareMappingLookup(@NotNull @Unmodifiable List<@NotNull ClassNode> nodes) {
-        this(new SimpleMappingLookup(), new SimpleTopLevelLookup(nodes));
+        this((Iterable<@NotNull ClassNode>) nodes);
     }
 
     /**
